@@ -85,10 +85,14 @@ int noPipeCommand(char** argv){
                 printf("cd: directory name required.\n");
             } 
             else {
-                // copy the directory name to the shared memory
-                strcpy(directory, argv[1]);
-                // switch the boolean value as true.
-                *cd_called = true;
+                // If successful, copy the directory name to the shared memory and set the boolean value as true.
+                if (chdir(argv[1]) == 0) {
+                    strcpy(directory, argv[1]);
+                    *cd_called = true;
+                } 
+                else {
+                    perror("cd: error changing directory in child");
+                }
             }
         }
         // 3.2 pwd
@@ -110,7 +114,7 @@ int noPipeCommand(char** argv){
         // 3.4 mkdir
         else if(strcmp(argv[0],"mkdir")==0){
             if(argv[1]==NULL){
-                printf("mkdir: directory name...\n");
+                printf("mkdir: specify directory name.\n");
             }
             else{
                 if(mkdir(argv[1],0777) == -1){
@@ -129,7 +133,7 @@ int noPipeCommand(char** argv){
         else if (strcmp(argv[0], "cat") == 0) {
 
             if (argv[1] == NULL) {
-                printf("cat: file name...\n");
+                printf("cat: specify file name.\n");
                 return 0;
             }
 
@@ -138,13 +142,14 @@ int noPipeCommand(char** argv){
 
             file = fopen(argv[1], "r");
             if (!file) {
-                perror("cat: cannot open the file");
+                perror("cat: cannot open the file.");
                 exit(0);
             }
 
             while (fgets(buffer, MAX_SIZE, file) != NULL) {
                 printf("%s", buffer); 
             }
+            printf("\n");
 
             fclose(file);
         }
@@ -152,7 +157,7 @@ int noPipeCommand(char** argv){
         // 3.7. rm
         else if(strcmp("rm",argv[0])==0){
             if (argv[1] == NULL) {
-                printf("rm: filename...\n");
+                printf("rm: specify the filename.\n");
             }
             else{
                 if (remove(argv[1]) == 0) {
@@ -303,17 +308,16 @@ int twoPipeCommand(char** argv1, char** argv2, char** argv3){
                 dup2(pipefds1[1],STDOUT_FILENO);
                 close(pipefds1[0]);
                 close(pipefds1[1]);
+                close(pipefds2[0]);
+                close(pipefds2[1]);
                 // Execute the first command
                 if (execvp(argv1[0],argv1) < 0){
                     perror("First command failed to execute");
-                    exit(1);
+                    exit(0);
                 }
-                exit(0);
             }
             // In child 2
             else{
-                // Wait for child3 to finish
-                wait(NULL);  
                 // Redirect STDIN of the first command to the read end of pipefds1
                 dup2(pipefds1[0],STDIN_FILENO);
                 // Redirect STDOUT of the second command to the write end of pipefds2
@@ -326,34 +330,37 @@ int twoPipeCommand(char** argv1, char** argv2, char** argv3){
                 // Execute the second command
                 if (execvp(argv2[0],argv2) < 0){
                     perror("Second command failed to execute");
-                    exit(1);
+                    exit(0);
                 }
-                exit(0);
             }
+            
         }
         // child 1
         else{
-            // Wait for child2 to finish
-            wait(NULL);  
             // Redirect STDIN of the second command to the read end of pipefds2
             dup2(pipefds2[0],STDIN_FILENO);
+            close(pipefds1[1]);
+            close(pipefds1[0]);
             close(pipefds2[1]);
             close(pipefds2[0]);
             if (execvp(argv3[0], argv3) < 0) {
                 perror("Third command failed to execute");
-                exit(1);
+                exit(0);
             }
-            exit(0);
         }
-    }
-    else{
-        wait(NULL);  // Wait for child1 to finish
         close(pipefds1[1]);
         close(pipefds1[0]);
         close(pipefds2[1]);
         close(pipefds2[0]);
-        return 0;
     }
+    else{
+        close(pipefds1[1]);
+        close(pipefds1[0]);
+        close(pipefds2[1]);
+        close(pipefds2[0]);
+        wait(NULL); 
+    }
+    return 0;
 }
 
 
@@ -415,19 +422,20 @@ int threePipeCommand(char** argv1, char** argv2, char** argv3, char** argv4){
                 else if(child4==0){
                     // Redirect STDOUT of the first command to the write end of pipefds1
                     dup2(pipefds1[1],STDOUT_FILENO);
-                    close(pipefds1[0]);
                     close(pipefds1[1]);
+                    close(pipefds1[0]);
+                    close(pipefds2[1]);
+                    close(pipefds2[0]);
+                    close(pipefds3[1]);
+                    close(pipefds3[0]);
                     // Execute the first command
                     if (execvp(argv1[0],argv1) < 0){
                         perror("First command failed to execute");
-                        exit(1);
+                        exit(0);
                     }
-                    exit(0);
                 }
                 // In child3
                 else{
-                    // Wait for child4 to finish
-                    wait(NULL);  
                     // Redirect STDIN of the first command to the read end of pipefds1
                     dup2(pipefds1[0],STDIN_FILENO);
                     // Redirect STDOUT of the second command to the write end of pipefds2
@@ -436,63 +444,70 @@ int threePipeCommand(char** argv1, char** argv2, char** argv3, char** argv4){
                     close(pipefds1[0]);
                     close(pipefds2[1]);
                     close(pipefds2[0]);
-
+                    close(pipefds3[1]);
+                    close(pipefds3[0]);
                     // Execute the second command
                     if (execvp(argv2[0],argv2) < 0){
                         perror("Second command failed to execute");
-                        exit(1);
+                        exit(0);
                     }
-                    exit(0);
                 }
             }
             // In child2
             else{
-                // Wait for child3 to finish
-                wait(NULL);  
                 // Redirect STDIN of the second command to the read end of pipefds3
                 dup2(pipefds2[0],STDIN_FILENO);
                 // Redirect STDOUT of the third command to the write end of pipefds3
                 dup2(pipefds3[1],STDOUT_FILENO);
+                close(pipefds1[1]);
+                close(pipefds1[0]);
                 close(pipefds2[1]);
                 close(pipefds2[0]);
                 close(pipefds3[1]);
                 close(pipefds3[0]);
 
-                // Execute the second command
+                // Execute the third command
                 if (execvp(argv3[0],argv3) < 0){
                     perror("Third command failed to execute");
-                    exit(1);
+                    exit(0);
                 }
-                exit(0);
             }
 
         }
         // in child1
         else{
-            // wait for child2 to finish
-            wait(NULL);
             // Redirect STDIN of the second command to the read end of pipefds2
             dup2(pipefds3[0],STDIN_FILENO);
+            close(pipefds1[1]);
+            close(pipefds1[0]);
+            close(pipefds2[1]);
+            close(pipefds2[0]);
             close(pipefds3[1]);
             close(pipefds3[0]);
             if (execvp(argv4[0],argv4) < 0){
                 perror("Fourth command failed to execute");
-                exit(1);
-            }
                 exit(0);
+            }
         }
-    }
-    // parent
-    else{
-        wait(NULL);
         close(pipefds1[1]);
         close(pipefds1[0]);
         close(pipefds2[1]);
         close(pipefds2[0]);
         close(pipefds3[1]);
         close(pipefds3[0]);
+    }
+    // parent
+    else{
+        close(pipefds1[1]);
+        close(pipefds1[0]);
+        close(pipefds2[1]);
+        close(pipefds2[0]);
+        close(pipefds3[1]);
+        close(pipefds3[0]);
+        wait(NULL);
         return 0;
     }
+    return 0;
 }
 
 int main(){
@@ -558,6 +573,5 @@ int main(){
             threePipeCommand(argv1,argv2,argv3,argv4);
         }
     }
-
     return 0;
 }
